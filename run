@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+fail() { echo "$*" >&2; exit 1; }
+case "${1:-help}" in
+  setup)
+    exec "$ROOT/install-mods"
+    ;;
+  claude|mods|models)
+    action="$1"
+    shift
+    NODE="$ROOT/.tools/node_modules/.bin/node"
+    [[ -x "$NODE" ]] || fail "먼저 $ROOT/run setup 을 실행하세요."
+    command -v codex >/dev/null || fail 'Codex CLI가 필요합니다.'
+    command -v claude >/dev/null || fail 'Claude Code를 먼저 설치하세요.'
+    export MULTI_REAL_CLAUDE="$(command -v claude)"
+    export PATH="$ROOT/.tools/node_modules/.bin:$PATH"
+    unset ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN ANTHROPIC_MODEL ANTHROPIC_DEFAULT_MODEL
+    unset ANTHROPIC_SMALL_FAST_MODEL CLAUDE_CODE_SUBAGENT_MODEL CLAUDE_CODE_SUBAGENT_MODEL_FORCE
+    unset ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL ANTHROPIC_DEFAULT_FABLE_MODEL
+    unset CLAUDE_CODE_USE_BEDROCK CLAUDE_CODE_USE_VERTEX CLAUDE_CODE_USE_FOUNDRY
+    if [[ "$action" == models ]]; then
+      exec "$NODE" "$ROOT/mods.mjs" --list
+    fi
+    exec "$NODE" "$ROOT/mods.mjs" "$@"
+    ;;
+  help|--help|-h)
+    echo "사용법: $ROOT/run {setup|models|claude [인수...]|mods [인수...]}"
+    echo 'claude/models: Codex에서 현재 모델 목록을 매번 조회합니다.'
+    ;;
+  *) fail '알 수 없는 명령입니다. run help 를 확인하세요.' ;;
+esac

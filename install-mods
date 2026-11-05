@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+VENDOR="$ROOT/vendor/cc-multi-cli-plugin"
+REVISION=3dcb057c10b16d3ed911e8ce509e91398712c906
+if [[ ! -x "$ROOT/.tools/node_modules/.bin/node" ]]; then
+  npm install --prefix "$ROOT/.tools" --no-audit --no-fund node@24.12.0
+fi
+export PATH="$ROOT/.tools/node_modules/.bin:$PATH"
+if [[ ! -d "$VENDOR/.git" ]]; then
+  git clone https://github.com/greenpolo/cc-multi-cli-plugin.git "$VENDOR"
+  git -C "$VENDOR" checkout "$REVISION"
+fi
+[[ "$(git -C "$VENDOR" rev-parse HEAD)" == "$REVISION" ]] || {
+  echo '예상한 Mods 버전과 다릅니다. README.md의 고정 버전을 확인하세요.' >&2; exit 1;
+}
+for patch in "$ROOT"/patches/*.patch; do
+  if ! git -C "$VENDOR" apply --reverse --check "$patch" 2>/dev/null; then
+    git -C "$VENDOR" apply "$patch"
+  fi
+done
+(cd "$VENDOR" && npm ci --no-audit --no-fund)
+if ! claude plugin marketplace list --json | python3 -c 'import json,sys; sys.exit(not any(m.get("name")=="cc-multi-cli-plugin" for m in json.load(sys.stdin)))'; then
+  claude plugin marketplace add "$VENDOR"
+fi
+claude plugin install multi-openai@cc-multi-cli-plugin --scope user
+mkdir -p "$HOME/.local/bin"
+LINK="$HOME/.local/bin/claude-multi"
+if [[ -e "$LINK" || -L "$LINK" ]]; then
+  [[ "$(readlink -f "$LINK")" == "$ROOT/claude-multi" ]] || {
+    echo "기존 $LINK 명령이 있어 덮어쓰지 않았습니다. $ROOT/run claude 를 사용하세요."; exit 0;
+  }
+else
+  ln -s "$ROOT/claude-multi" "$LINK"
+fi
+echo "설치 완료: claude-multi 또는 $ROOT/run claude"

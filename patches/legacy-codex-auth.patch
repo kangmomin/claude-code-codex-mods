@@ -1,0 +1,50 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index a655d1f..572fdda 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -6,6 +6,8 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for current direction and
+ 
+ ## Unreleased
+ 
++- **Local compatibility patch:** accept legacy Codex ChatGPT auth files with tokens
++  and an explicit null API key when `auth_mode` is absent; API-key files still fail.
+ - **Run GPT-6.1 Sol on OpenAI.** Codex now serves `gpt-6.1-sol` on ChatGPT
+   plans, so the OpenAI picker row and `model: gpt-6.1-sol` on a `multi-openai`
+   worker run it in place of the previous-generation `gpt-6-sol`. The default
+diff --git a/plugins/multi-openai/src/auth.ts b/plugins/multi-openai/src/auth.ts
+index 1aee2a7..da6ae56 100644
+--- a/plugins/multi-openai/src/auth.ts
++++ b/plugins/multi-openai/src/auth.ts
+@@ -31,7 +31,8 @@ async function savedAuth(authFile: string) {
+   const tokens = isRecord(auth) && isRecord(auth.tokens) ? auth.tokens : undefined;
+   if (
+     !isRecord(auth) ||
+-    auth.auth_mode !== 'chatgpt' ||
++    (auth.auth_mode !== 'chatgpt' &&
++      !(auth.auth_mode === undefined && auth.OPENAI_API_KEY === null)) ||
+     typeof tokens?.access_token !== 'string' ||
+     !tokens.access_token ||
+     typeof tokens.account_id !== 'string' ||
+diff --git a/test/unit/native-openai-auth.test.ts b/test/unit/native-openai-auth.test.ts
+index 53d3199..03c70d1 100644
+--- a/test/unit/native-openai-auth.test.ts
++++ b/test/unit/native-openai-auth.test.ts
+@@ -75,6 +75,18 @@ async function fixture(t: TestContext, mode = 'ok', accessToken = oldToken) {
+ const signal = () => AbortSignal.timeout(5000);
+ const unix = { skip: process.platform === 'win32' };
+ 
++test('legacy Codex subscription files without auth_mode remain readable', unix, async (t) => {
++  const f = await fixture(t);
++  const saved = JSON.parse(await readFile(f.authFile, 'utf8'));
++  delete saved.auth_mode;
++  saved.OPENAI_API_KEY = null;
++  await writeFile(f.authFile, JSON.stringify(saved));
++  assert.equal((await readCodexAuth(f.authFile)).authorization, `Bearer ${oldToken}`);
++  saved.OPENAI_API_KEY = 'fixture-api-key';
++  await writeFile(f.authFile, JSON.stringify(saved));
++  await assert.rejects(readCodexAuth(f.authFile), /require a Codex ChatGPT login/);
++});
++
+ test('expired credentials are renewed through Codex before inference', unix, async (t) => {
+   const f = await fixture(t, 'ok', jwt(1));
+   const headers = await readCodexAuth(f.authFile);

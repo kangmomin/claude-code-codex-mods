@@ -1,0 +1,10 @@
+.state/
+.tools/
+.venv/
+vendor/
+node_modules/
+.env
+.env.*
+*.log
+.DS_Store
+__pycache__/
